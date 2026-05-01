@@ -1,30 +1,218 @@
-package com.bloomingacademy.app;
+<!DOCTYPE html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blooming Academy</title>
 
-import android.os.Bundle;
-import android.webkit.WebView;
-import android.webkit.WebViewClient;
-import androidx.appcompat.app.AppCompatActivity;
-
-public class MainActivity extends AppCompatActivity {
-
-    WebView webView;
-
-    @Override
-    protected void onCreate(Bundle savedInstanceState) {
-        super.onCreate(savedInstanceState);
-
-        webView = new WebView(this);
-        setContentView(webView);
-
-        webView.setWebViewClient(new WebViewClient());
-        webView.getSettings().setJavaScriptEnabled(true);
-
-        webView.loadUrl("https://bloomingacademy.netlify.app");
-    }
-
-    @Override
-    public void onBackPressed() {
-        if (webView.canGoBack()) webView.goBack();
-        else super.onBackPressed();
-    }
+<style>
+body { font-family: Arial; margin:0; background:#f4f6f8;}
+header { background:#2e7d32; color:white; padding:15px; text-align:center;}
+.container { padding:15px;}
+.card {
+  background:white;
+  padding:15px;
+  margin:10px 0;
+  border-radius:12px;
 }
+button {
+  background:#2e7d32;
+  color:white;
+  padding:10px;
+  border:none;
+  border-radius:6px;
+}
+input { width:100%; padding:8px; margin:5px 0;}
+.hidden { display:none; }
+</style>
+</head>
+
+<body>
+
+<header>
+<h2>🌱 Blooming Academy</h2>
+</header>
+
+<div class="container">
+
+<!-- LOGIN -->
+<div id="loginBox" class="card">
+<h3>Login</h3>
+<input id="email" placeholder="Email">
+<input id="password" type="password" placeholder="Password">
+<button onclick="login()">Login</button>
+</div>
+
+<!-- STUDENT DASHBOARD -->
+<div id="studentDash" class="hidden">
+
+<div class="card">
+<h3>📚 Materials</h3>
+<div id="materials"></div>
+</div>
+
+<div class="card">
+<h3>📊 Attendance</h3>
+<p id="attendance"></p>
+</div>
+
+<div class="card">
+<h3>💰 Payment</h3>
+<p id="payment"></p>
+<input id="upiRef" placeholder="Enter UPI Ref ID">
+<button onclick="submitPayment()">Submit Payment</button>
+<button onclick="payUPI()">Pay via UPI</button>
+</div>
+
+</div>
+
+<!-- ADMIN DASHBOARD -->
+<div id="adminDash" class="hidden">
+
+<div class="card">
+<h3>📊 Analytics</h3>
+<p id="totalStudents"></p>
+<p id="totalRevenue"></p>
+</div>
+
+<div class="card">
+<h3>👨‍🎓 Add Student</h3>
+<input id="sName" placeholder="Name">
+<input id="sEmail" placeholder="Email">
+<input id="sPass" placeholder="Password">
+<button onclick="addStudent()">Add</button>
+</div>
+
+<div class="card">
+<h3>📚 Upload Material</h3>
+<input id="mTitle" placeholder="Title">
+<input id="mLink" placeholder="Link">
+<button onclick="addMaterial()">Upload</button>
+</div>
+
+<div class="card">
+<h3>💰 Verify Payments</h3>
+<div id="paymentList"></div>
+</div>
+
+</div>
+
+</div>
+
+<!-- FIREBASE -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js"></script>
+
+<script>
+const firebaseConfig = {
+  apiKey: "YOUR_KEY",
+  authDomain: "YOUR_DOMAIN",
+  projectId: "YOUR_ID"
+};
+
+firebase.initializeApp(firebaseConfig);
+const auth = firebase.auth();
+const db = firebase.firestore();
+
+function login() {
+  auth.signInWithEmailAndPassword(email.value, password.value)
+  .then(user => loadDashboard(user.user.uid))
+  .catch(e => alert(e.message));
+}
+
+function loadDashboard(uid) {
+  db.collection("admins").doc(uid).get().then(doc=>{
+    if(doc.exists) {
+      adminDash.classList.remove("hidden");
+      loadAdmin();
+    } else {
+      studentDash.classList.remove("hidden");
+      loadStudent(uid);
+    }
+  });
+}
+
+function loadStudent(uid) {
+  db.collection("students").doc(uid).get().then(doc=>{
+    let d = doc.data();
+    attendance.innerText = d.attendance + "%";
+    payment.innerText = d.paymentStatus;
+  });
+
+  db.collection("materials").get().then(snap=>{
+    materials.innerHTML="";
+    snap.forEach(doc=>{
+      let d = doc.data();
+      materials.innerHTML += `<p><a href="${d.link}">${d.title}</a></p>`;
+    });
+  });
+}
+
+function addStudent() {
+  auth.createUserWithEmailAndPassword(sEmail.value, sPass.value)
+  .then(user=>{
+    db.collection("students").doc(user.user.uid).set({
+      name:sName.value,
+      email:sEmail.value,
+      attendance:0,
+      paymentStatus:"Pending",
+      totalPaid:0
+    });
+    alert("Student Added");
+  });
+}
+
+function addMaterial() {
+  db.collection("materials").add({
+    title:mTitle.value,
+    link:mLink.value,
+    createdAt:new Date()
+  });
+  alert("Uploaded");
+}
+
+function submitPayment() {
+  db.collection("payments").add({
+    studentId:auth.currentUser.uid,
+    refId:upiRef.value,
+    status:"Pending",
+    date:new Date()
+  });
+  alert("Submitted for verification");
+}
+
+function loadAdmin() {
+
+  db.collection("students").get().then(snap=>{
+    totalStudents.innerText = "Total Students: " + snap.size;
+  });
+
+  db.collection("payments").get().then(snap=>{
+    let total=0;
+    paymentList.innerHTML="";
+    snap.forEach(doc=>{
+      let d = doc.data();
+      if(d.status==="Approved") total += d.amount || 0;
+
+      paymentList.innerHTML += `
+      <div>
+        Ref: ${d.refId} 
+        <button onclick="approve('${doc.id}')">Approve</button>
+      </div>`;
+    });
+    totalRevenue.innerText = "Revenue: ₹" + total;
+  });
+}
+
+function approve(id) {
+  db.collection("payments").doc(id).update({status:"Approved"});
+  alert("Approved");
+}
+
+function payUPI() {
+  window.location.href="upi://pay?pa=yourupi@upi&pn=BloomingAcademy&am=500";
+}
+</script>
+
+</body>
+</html>
